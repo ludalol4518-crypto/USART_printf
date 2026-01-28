@@ -78,6 +78,8 @@ void Error_Handler(void);
 #define TCK_GPIO_Port GPIOA
 #define LT1_Pin GPIO_PIN_10
 #define LT1_GPIO_Port GPIOC
+#define ITEM_Pin GPIO_PIN_11
+#define ITEM_GPIO_Port GPIOC
 #define LT2_Pin GPIO_PIN_12
 #define LT2_GPIO_Port GPIOC
 #define LFF_Pin GPIO_PIN_3

@@ -1,18 +1,14 @@
 /* USER CODE BEGIN Header */
-/** 2026.01.28
+/**
   ******************************************************************************
   * @file           : main.c
-  * @brief          : Main program body
+  * @brief          : 서빙 로봇 시스템 v1.4
   ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2026 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
+  * 센서 시퀀스:
+  * 홈:       (0,0) 출발
+  * 테이블1:  (1,1) → (1,0) 경계에서 정지
+  * 테이블2:  (1,1) → (1,0) → (0,1) 경계에서 정지
+  * 테이블3:  (1,1) → (1,0) → (0,1) → (0,0) 경계에서 정지
   ******************************************************************************
   */
 /* USER CODE END Header */
@@ -50,6 +46,7 @@ UART_HandleTypeDef huart2;
 #define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
 #define GETCHAR_PROTOTYPE int fgetc(FILE *f)
 #endif
+
 int dir = 0;
 int LF(int dir){
       switch(dir){
@@ -167,7 +164,9 @@ int TRB(){
       HAL_GPIO_WritePin(RBF_GPIO_Port, RBF_Pin, 0);
       HAL_GPIO_WritePin(RBB_GPIO_Port, RBB_Pin, 1);
    }
-   void ML()
+
+   // ML과 MR 스왑됨 (좌우 방향 수정)
+   void MR()
    {
       HAL_GPIO_WritePin(LFF_GPIO_Port, LFF_Pin, 0);
       HAL_GPIO_WritePin(LFB_GPIO_Port, LFB_Pin, 0);
@@ -178,7 +177,7 @@ int TRB(){
       HAL_GPIO_WritePin(RBF_GPIO_Port, RBF_Pin, 1);
       HAL_GPIO_WritePin(RBB_GPIO_Port, RBB_Pin, 0);
    }
-   void MR()
+   void ML()
    {
       HAL_GPIO_WritePin(LFF_GPIO_Port, LFF_Pin, 1);
       HAL_GPIO_WritePin(LFB_GPIO_Port, LFB_Pin, 0);
@@ -200,19 +199,20 @@ int TRB(){
       HAL_GPIO_WritePin(RBF_GPIO_Port, RBF_Pin, 0);
       HAL_GPIO_WritePin(RBB_GPIO_Port, RBB_Pin, 0);
    }
+
 PUTCHAR_PROTOTYPE
 {
-if (ch == '\n')
-HAL_UART_Transmit(&huart2, (uint8_t*)"\r", 1, HAL_MAX_DELAY);
-HAL_UART_Transmit(&huart2, (uint8_t*)&ch, 1, HAL_MAX_DELAY);
-return ch;
+    if (ch == '\n')
+        HAL_UART_Transmit(&huart2, (uint8_t*)"\r", 1, HAL_MAX_DELAY);
+    HAL_UART_Transmit(&huart2, (uint8_t*)&ch, 1, HAL_MAX_DELAY);
+    return ch;
 }
 
 GETCHAR_PROTOTYPE
 {
-uint8_t ch;
-HAL_UART_Receive(&huart2, &ch, 1, HAL_MAX_DELAY);
-return ch;
+    uint8_t ch;
+    HAL_UART_Receive(&huart2, &ch, 1, HAL_MAX_DELAY);
+    return ch;
 }
 /* USER CODE END PV */
 
@@ -226,20 +226,7 @@ static void MX_USART2_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-//#ifdef __GNUC__
-//#define PUTCHAR_PROTOTYPE int _io__putchar(int ch)
-//#else
-//#define PUTCHAR_PROTOTYPE int fputc(int ch, FILE *f)
-//#endif
-//
-//PUTCHAR_PROTOTYPE
-//{
-//   if (ch == '\n')
-//      HAL_UART_Transmit (&huart2, (uint8_t*) "\r", 1, 0xFFFF);
-//   HAL_UART_Transmit(&huart2, (uint8_t*) &ch, 1, 0xFFFF);
-//
-//   return ch;
-//}
+
 /* USER CODE END 0 */
 
 /**
@@ -249,13 +236,29 @@ static void MX_USART2_UART_Init(void);
 int main(void)
 {
 
-   /* USER CODE BEGIN 1 */
-   uint8_t SEN1 = 0;
-   uint8_t SEN2 = 0;
-   uint8_t mode = 0;       // 0: 수동, 1: 1번위치, 2: 2번위치, 3: 3번위치
-   uint8_t seq_state = 0;  // 시퀀스 진행 단계
-   uint8_t returning = 0;  // 0: 전진 중, 1: 복귀 중
-   /* USER CODE END 1 */
+  /* USER CODE BEGIN 1 */
+    // === 센서 변수 ===
+    uint8_t SEN1 = 0;
+    uint8_t SEN2 = 0;
+    uint8_t SEN1_prev = 0;
+    uint8_t SEN2_prev = 0;
+
+    // === 서빙 로봇 상태 변수 ===
+    // 0: 홈대기, 1: 전진중, 2: 도착-물건제거대기, 3: 복귀중, 4: 수동모드
+    uint8_t system_state = 0;
+    uint8_t target_table = 0;   // 목표 테이블 번호 (1, 2, 3)
+    uint8_t item_sensor = 0;    // 물건 감지 센서 (1: 물건있음, 0: 없음)
+    uint8_t item_sensor_prev = 0;
+
+    // === 구간 추적 ===
+    // 센서 시퀀스: (0,0) → (1,1) → (1,0) → (0,1) → (0,0)
+    //             홈      구간1    구간2    구간3    구간4(테이블3)
+    uint8_t zone_count = 0;     // 지나간 센서 변화 횟수
+
+    // === UART 변수 ===
+    uint8_t rx_data;
+    HAL_StatusTypeDef uart_status;
+  /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
 
@@ -277,343 +280,405 @@ int main(void)
   MX_GPIO_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  printf("\n=== WASD 입력 테스트 ===\n");
-  printf("W: 위, A: 왼쪽, S: 아래, D: 오른쪽\n");
-  printf("q: 종료\n\n");
+    printf("\n========================================\n");
+    printf("       서빙 로봇 시스템 v1.4\n");
+    printf("========================================\n");
+    printf("[테이블 선택] 1, 2, 3\n");
+    printf("[물건 센서]   L: 물건올림, U: 물건내림\n");
+    printf("[제어]       0: 강제복귀, X: 비상정지\n");
+    printf("[수동조작]   W/A/S/D: 이동, q/e/z/c: 회전\n");
+    printf("========================================\n");
+    printf("센서 시퀀스:\n");
+    printf("홈(0,0)→(1,1)→(1,0)T1→(0,1)T2→(0,0)T3\n");
+    printf("========================================\n\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  uint8_t rx_data;
-  HAL_StatusTypeDef status;
-//  while (1)
-//  {
-//     printf("방향 입력: ");
-//
-//  // 타임아웃을 1초로 설정하여 테스트
-//  status = HAL_UART_Receive(&huart2, &rx_data, 1, 1000);
-//  SEN1 = HAL_GPIO_ReadPin(LT1_GPIO_Port, LT1_Pin);
-//  SEN2 = HAL_GPIO_ReadPin(LT2_GPIO_Port, LT2_Pin);
-//  printf("L1=%d,L2=%d",SEN1,SEN2);
-//
-//  if (status == HAL_OK)
-//  {
-//     printf("%c\n", rx_data);
-//     printf("수신 성공! 값: 0x%02X ('%c')\n", rx_data, rx_data);
-//
-//
-////     //if문을 사용한 제어
-////     if (rx_data == 'w')
-////        MF(]);
-////     else if (rx_data == 'a')
-////        ML();
-////     else if (rx_data == 'd')
-////        MR();
-////     else if (rx_data == 's')
-////        MB();
-////     else
-////        ST();
-//     switch (rx_data){
-//     case '1':
-//        printf("1\n");
-//          if(SEN1 == 1 && SEN2 == 1) MF();
-//          else if(SEN1 == 0 && SEN2 == 0) MF();
-//          else if(SEN1 == 1 && SEN2 == 0) ST();
-//          else ST();
-//        break;
-//
-//     case 'O':
-//        printf("1\n");
-//        if(SEN1 == '0' && SEN2 == '0') {MF();}
-//        else if(SEN1 == '1' && SEN2 == '1') {MF();}
-//        else if(SEN1 == '1' && SEN2 == '0') {MF();}
-//        else if(SEN1 == '0' && SEN2 == '1') {ST();}
-//        else {ST();}
-//        break;
-//
-//     case 'P':
-//        printf("1\n");
-//           if(SEN1 == '0' && SEN2 == '0') {MF();}
-//           else if(SEN1 == '1' && SEN2 == '1') {MF();}
-//           else if(SEN1 == '1' && SEN2 == '0') {MF();}
-//           else if(SEN1 == '0' && SEN2 == '1') {MF();}
-//           else if(SEN1 == '0' && SEN2 == '0') {ST();}
-//           else {ST();}
-//        break;
-//
-//     case 'W':
-//        //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 1);
-//        MF();
-//        //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
-//        break;
-//     case 'A':
-//       //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 1);
-//        ML();
-//        //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
-//        break;
-//     case 'D':
-//       //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 1);
-//        MR();
-//        //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
-//        break;
-//     case 'S':
-//        //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 1);
-//        MB();
-//        //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
-//        break;
-//     case 'X':
-//        ST();
-//        break;
-//     case 'q':
-//        //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 1);
-//        TLF();
-//        //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
-//        break;
-//     case 'e':
-//        //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 1);
-//        TRF();
-//        //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
-//        break;
-//     case 'z':
-//        //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 1);
-//        TLB();
-//        //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
-//        break;
-//     case 'c':
-//        //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 1);
-//        TRB();
-//        //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, 0);
-//        break;
-//     default:
-//          //ST();
-//          break;}
-//     }
-//
-//  else if (status == HAL_TIMEOUT)
-//  {
-//     printf("\n타임아웃 - 입력 없음\n");
-//     //ST();
-//  }
-//  else
-//  {
-//     printf("\n에러 발생: %d\n", status);
-//
-//}
-//  HAL_Delay(50);
-//     /*printf ("Hello World!\n");
-//     HAL_Delay(1000);*/
-//    /* USER CODE END WHILE */
-//
-//    /* USER CODE BEGIN 3 */
-//  }
-  while (1)
-  {
-      // 센서 읽기
-      SEN1 = HAL_GPIO_ReadPin(LT1_GPIO_Port, LT1_Pin);
-      SEN2 = HAL_GPIO_ReadPin(LT2_GPIO_Port, LT2_Pin);
+    while (1)
+    {
+        // ============================================
+        // === 센서 읽기 ===
+        // ============================================
+        SEN1_prev = SEN1;
+        SEN2_prev = SEN2;
+        SEN1 = HAL_GPIO_ReadPin(LT1_GPIO_Port, LT1_Pin);
+        SEN2 = HAL_GPIO_ReadPin(LT2_GPIO_Port, LT2_Pin);
 
-      // 키 입력 체크 (Non-blocking)
-      status = HAL_UART_Receive(&huart2, &rx_data, 1, 10);
+        // === 물건 감지 센서 읽기 ===
+        // 센서 극성: 물건 있음 = 0 (LOAD), 물건 없음 = 1 (UNLOAD)
+        item_sensor_prev = item_sensor;
+        uint8_t item_raw = HAL_GPIO_ReadPin(ITEM_GPIO_Port, ITEM_Pin);
+        item_sensor = (item_raw == 0) ? 1 : 0;
 
-      if (status == HAL_OK)
-      {
-          printf("입력: %c\n", rx_data);
+        // 센서 상태 변화 시 LOAD/UNLOAD 출력
+        if (item_sensor != item_sensor_prev) {
+            if (item_sensor == 1) {
+                printf(">>> LOAD\n");
+            } else {
+                printf(">>> UNLOAD\n");
+            }
+        }
 
-          switch (rx_data)
-          {
-              case 'I':  // 1번 위치로 이동
-                  mode = 1;
-                  seq_state = 0;
-                  returning = 0;
-                  printf("1번 위치로 이동 시작\n");
-                  break;
-              case 'O':  // 2번 위치로 이동
-                  mode = 2;
-                  seq_state = 0;
-                  returning = 0;
-                  printf("2번 위치로 이동 시작\n");
-                  break;
-              case 'P':  // 3번 위치로 이동
-                  mode = 3;
-                  seq_state = 0;
-                  returning = 0;
-                  printf("3번 위치로 이동 시작\n");
-                  break;
+        // ============================================
+        // === 키 입력 처리 ===
+        // ============================================
+        uart_status = HAL_UART_Receive(&huart2, &rx_data, 1, 10);
 
-              // 수동 조작 (모드 해제)
-              case 'W': mode = 0; returning = 0; MF(); break;
-              case 'A': mode = 0; returning = 0; ML(); break;
-              case 'D': mode = 0; returning = 0; MR(); break;
-              case 'S': mode = 0; returning = 0; MB(); break;
-              case 'X': mode = 0; returning = 0; ST(); break;
-              case 'q': mode = 0; returning = 0; TLF(); break;
-              case 'e': mode = 0; returning = 0; TRF(); break;
-              case 'z': mode = 0; returning = 0; TLB(); break;
-              case 'c': mode = 0; returning = 0; TRB(); break;
-              default: break;
-          }
-      }
+        if (uart_status == HAL_OK)
+        {
+            printf("입력: %c\n", rx_data);
 
-      // === 자동 모드 ===
-      if (mode != 0)
-      {
-          if (returning == 0)
-          {
-              // ===== 전진: 목표 위치로 이동 =====
-              MF();
+            switch (rx_data)
+            {
+                // === 테이블 목적지 설정 ===
+                case '1':
+                    if (system_state == 0 || system_state == 4) {
+                        if (system_state == 4) {
+                            ST();
+                            system_state = 0;
+                            printf(">>> 자동 모드로 전환\n");
+                        }
+                        target_table = 1;
+                        zone_count = 0;
+                        printf(">>> 목적지: 테이블 1 설정\n");
+                    } else {
+                        printf(">>> 이동 중에는 목적지 변경 불가\n");
+                    }
+                    break;
 
-              switch (seq_state)
-              {
-                  case 0:  // (1,1) → (0,0) 기다림
-                      if (SEN1 == 0 && SEN2 == 0) {
-                          seq_state = 1;
-                          printf("전진 시퀀스 1: (0,0) 진입\n");
-                      }
-                      break;
+                case '2':
+                    if (system_state == 0 || system_state == 4) {
+                        if (system_state == 4) {
+                            ST();
+                            system_state = 0;
+                            printf(">>> 자동 모드로 전환\n");
+                        }
+                        target_table = 2;
+                        zone_count = 0;
+                        printf(">>> 목적지: 테이블 2 설정\n");
+                    } else {
+                        printf(">>> 이동 중에는 목적지 변경 불가\n");
+                    }
+                    break;
 
-                  case 1:  // (0,0) → (1,0) 기다림
-                      if (SEN1 == 1 && SEN2 == 0) {
-                          if (mode == 1) {  // 1번 위치 도착
-                              ST();
-                              printf("1번 위치 도착! 3초 후 복귀\n");
-                              HAL_Delay(3000);
-                              returning = 1;
-                              seq_state = 0;
-                          } else {
-                              seq_state = 2;
-                              printf("전진 시퀀스 2: (1,0) 진입\n");
-                          }
-                      }
-                      break;
+                case '3':
+                    if (system_state == 0 || system_state == 4) {
+                        if (system_state == 4) {
+                            ST();
+                            system_state = 0;
+                            printf(">>> 자동 모드로 전환\n");
+                        }
+                        target_table = 3;
+                        zone_count = 0;
+                        printf(">>> 목적지: 테이블 3 설정\n");
+                    } else {
+                        printf(">>> 이동 중에는 목적지 변경 불가\n");
+                    }
+                    break;
 
-                  case 2:  // (1,0) → (0,1) 기다림
-                      if (SEN1 == 0 && SEN2 == 1) {
-                          if (mode == 2) {  // 2번 위치 도착
-                              ST();
-                              printf("2번 위치 도착! 3초 후 복귀\n");
-                              HAL_Delay(3000);
-                              returning = 1;
-                              seq_state = 0;
-                          } else {
-                              seq_state = 3;
-                              printf("전진 시퀀스 3: (0,1) 진입\n");
-                          }
-                      }
-                      break;
+                // === 물건 센서 시뮬레이션 ===
+                case 'L':
+                case 'l':
+                    item_sensor = 1;
+                    printf(">>> LOAD (수동입력)\n");
+                    break;
 
-                  case 3:  // (0,1) → (1,1) 기다림
-                      if (SEN1 == 1 && SEN2 == 1) {
-                          if (mode == 3) {  // 3번 위치 도착
-                              ST();
-                              printf("3번 위치 도착! 3초 후 복귀\n");
-                              HAL_Delay(3000);
-                              returning = 1;
-                              seq_state = 0;
-                          }
-                      }
-                      break;
-              }
-          }
-          else
-          {
-              // ===== 후진: 초기 위치로 복귀 =====
-              MB();
+                case 'U':
+                case 'u':
+                    item_sensor = 0;
+                    printf(">>> UNLOAD (수동입력)\n");
+                    break;
 
-              // 복귀 시퀀스 (역순)
-              // 1번에서 복귀: (1,0) → (0,0) → (1,1)
-              // 2번에서 복귀: (0,1) → (1,0) → (0,0) → (1,1)
-              // 3번에서 복귀: (1,1) → (0,1) → (1,0) → (0,0) → (1,1)
+                // === 강제 홈 복귀 ===
+                case '0':
+                    if (system_state == 4) {
+                        // 수동모드 해제
+                        ST();
+                        system_state = 0;
+                        target_table = 0;
+                        zone_count = 0;
+                        printf(">>> 수동모드 해제, 홈 대기 상태\n");
+                    } else if (system_state == 1 || system_state == 2) {
+                        // 이동중/도착 상태에서 강제 복귀
+                        system_state = 3;
+                        zone_count = 0;  // 복귀용 카운터 리셋
+                        printf(">>> 강제 홈 복귀 시작\n");
+                    }
+                    break;
 
-              switch (mode)
-              {
-                  case 1:  // 1번 위치에서 복귀
-                      switch (seq_state)
-                      {
-                          case 0:  // (1,0) → (0,0) 기다림
-                              if (SEN1 == 0 && SEN2 == 0) {
-                                  seq_state = 1;
-                                  printf("복귀 1: (0,0) 진입\n");
-                              }
-                              break;
-                          case 1:  // (0,0) → (1,1) 기다림
-                              if (SEN1 == 1 && SEN2 == 1) {
-                                  ST();
-                                  mode = 0;
-                                  returning = 0;
-                                  printf("초기 위치 복귀 완료!\n");
-                              }
-                              break;
-                      }
-                      break;
+                // === 비상 정지 ===
+                case 'X':
+                case 'x':
+                    ST();
+                    system_state = 0;
+                    target_table = 0;
+                    zone_count = 0;
+                    printf(">>> 비상 정지! 초기화\n");
+                    break;
 
-                  case 2:  // 2번 위치에서 복귀
-                      switch (seq_state)
-                      {
-                          case 0:  // (0,1) → (1,0) 기다림
-                              if (SEN1 == 1 && SEN2 == 0) {
-                                  seq_state = 1;
-                                  printf("복귀 1: (1,0) 진입\n");
-                              }
-                              break;
-                          case 1:  // (1,0) → (0,0) 기다림
-                              if (SEN1 == 0 && SEN2 == 0) {
-                                  seq_state = 2;
-                                  printf("복귀 2: (0,0) 진입\n");
-                              }
-                              break;
-                          case 2:  // (0,0) → (1,1) 기다림
-                              if (SEN1 == 1 && SEN2 == 1) {
-                                  ST();
-                                  mode = 0;
-                                  returning = 0;
-                                  printf("초기 위치 복귀 완료!\n");
-                              }
-                              break;
-                      }
-                      break;
+                // === 수동 조작 ===
+                case 'W':
+                case 'w':
+                    system_state = 4;
+                    MF();
+                    printf(">>> 수동: 전진\n");
+                    break;
 
-                  case 3:  // 3번 위치에서 복귀
-                      switch (seq_state)
-                      {
-                          case 0:  // (1,1) → (0,1) 기다림
-                              if (SEN1 == 0 && SEN2 == 1) {
-                                  seq_state = 1;
-                                  printf("복귀 1: (0,1) 진입\n");
-                              }
-                              break;
-                          case 1:  // (0,1) → (1,0) 기다림
-                              if (SEN1 == 1 && SEN2 == 0) {
-                                  seq_state = 2;
-                                  printf("복귀 2: (1,0) 진입\n");
-                              }
-                              break;
-                          case 2:  // (1,0) → (0,0) 기다림
-                              if (SEN1 == 0 && SEN2 == 0) {
-                                  seq_state = 3;
-                                  printf("복귀 3: (0,0) 진입\n");
-                              }
-                              break;
-                          case 3:  // (0,0) → (1,1) 기다림
-                              if (SEN1 == 1 && SEN2 == 1) {
-                                  ST();
-                                  mode = 0;
-                                  returning = 0;
-                                  printf("초기 위치 복귀 완료!\n");
-                              }
-                              break;
-                      }
-                      break;
-              }
-          }
+                case 'S':
+                case 's':
+                    system_state = 4;
+                    MB();
+                    printf(">>> 수동: 후진\n");
+                    break;
 
-          printf("mode=%d, ret=%d, seq=%d, SEN=(%d,%d)\n",
-                 mode, returning, seq_state, SEN1, SEN2);
-      }
-      printf("mode=%d, ret=%d, seq=%d, SEN=(%d,%d)\n",
-             mode, returning, seq_state, SEN1, SEN2);
+                case 'A':
+                case 'a':
+                    system_state = 4;
+                    ML();
+                    printf(">>> 수동: 좌회전\n");
+                    break;
 
-      HAL_Delay(50);
-  }
+                case 'D':
+                case 'd':
+                    system_state = 4;
+                    MR();
+                    printf(">>> 수동: 우회전\n");
+                    break;
+
+                case 'q':
+                case 'Q':
+                    system_state = 4;
+                    TRF();
+                    printf(">>> 수동: 좌회전(전진)\n");
+                    break;
+
+                case 'e':
+                case 'E':
+                    system_state = 4;
+                    TLF();
+                    printf(">>> 수동: 우회전(전진)\n");
+                    break;
+
+                case 'z':
+                case 'Z':
+                    system_state = 4;
+                    TRB();
+                    printf(">>> 수동: 좌회전(후진)\n");
+                    break;
+
+                case 'c':
+                case 'C':
+                    system_state = 4;
+                    TLB();
+                    printf(">>> 수동: 우회전(후진)\n");
+                    break;
+
+                default:
+                    break;
+            }
+        }
+
+        // ============================================
+        // === 센서 변화 감지 ===
+        // ============================================
+        uint8_t sensor_changed = (SEN1 != SEN1_prev || SEN2 != SEN2_prev);
+
+        // ============================================
+        // === 서빙 로봇 상태 머신 ===
+        // ============================================
+        /*
+         * 전진 센서 시퀀스:
+         * 홈(0,0) → (1,1) → (1,0)[T1] → (0,1)[T2] → (0,0)[T3]
+         *           zone=1   zone=2      zone=3      zone=4
+         *
+         * 복귀 센서 시퀀스 (역순):
+         * T3(0,0) → (0,1) → (1,0) → (1,1) → (0,0)[홈]
+         * T2(0,1) → (1,0) → (1,1) → (0,0)[홈]
+         * T1(1,0) → (1,1) → (0,0)[홈]
+         */
+
+        switch (system_state)
+        {
+            // -----------------------------------------
+            // 상태 0: 홈 대기
+            // -----------------------------------------
+            case 0:
+                ST();
+                if (target_table != 0 && item_sensor == 1) {
+                    system_state = 1;
+                    zone_count = 0;
+                    printf("\n=== 테이블 %d로 출발! ===\n", target_table);
+                }
+                break;
+
+            // -----------------------------------------
+            // 상태 1: 전진 중
+            // -----------------------------------------
+            case 1:
+                MF();
+
+                if (sensor_changed) {
+                    // (0,0) → (1,1): zone 1
+                    if (SEN1 == 1 && SEN2 == 1 && zone_count == 0) {
+                        zone_count = 1;
+                        printf(">> 구간1 진입 (1,1)\n");
+                    }
+                    // (1,1) → (1,0): zone 2 = 테이블1 위치
+                    else if (SEN1 == 1 && SEN2 == 0 && zone_count == 1) {
+                        zone_count = 2;
+                        printf(">> 구간2 진입 (1,0)\n");
+                        if (target_table == 1) {
+                            ST();
+                            system_state = 2;
+                            printf("\n=== 테이블 1 도착! ===\n");
+                        }
+                    }
+                    // (1,0) → (0,1): zone 3 = 테이블2 위치
+                    else if (SEN1 == 0 && SEN2 == 1 && zone_count == 2) {
+                        zone_count = 3;
+                        printf(">> 구간3 진입 (0,1)\n");
+                        if (target_table == 2) {
+                            ST();
+                            system_state = 2;
+                            printf("\n=== 테이블 2 도착! ===\n");
+                        }
+                    }
+                    // (0,1) → (0,0): zone 4 = 테이블3 위치
+                    else if (SEN1 == 0 && SEN2 == 0 && zone_count == 3) {
+                        zone_count = 4;
+                        printf(">> 구간4 진입 (0,0)\n");
+                        if (target_table == 3) {
+                            ST();
+                            system_state = 2;
+                            printf("\n=== 테이블 3 도착! ===\n");
+                        }
+                    }
+                }
+                break;
+
+            // -----------------------------------------
+            // 상태 2: 도착 - 물건 제거 대기
+            // -----------------------------------------
+            case 2:
+                ST();
+                if (item_sensor == 0) {
+                    system_state = 3;
+                    zone_count = 0;  // 복귀용 카운터 리셋
+                    printf("\n=== 물건 제거됨! 홈으로 복귀 시작 ===\n");
+                }
+                break;
+
+            // -----------------------------------------
+            // 상태 3: 복귀 중
+            // -----------------------------------------
+            case 3:
+                MB();
+
+                if (sensor_changed) {
+                    /*
+                     * 복귀 시퀀스 (현재 위치에 따라 다름):
+                     * T1(1,0): (1,0)→(1,1)→(0,0)홈
+                     * T2(0,1): (0,1)→(1,0)→(1,1)→(0,0)홈
+                     * T3(0,0): (0,0)→(0,1)→(1,0)→(1,1)→(0,0)홈
+                     *
+                     * 공통: (1,1) 만나면 다음 (0,0)이 홈
+                     */
+
+                    // 테이블1 복귀: (1,0) → (1,1) → (0,0)
+                    if (target_table == 1) {
+                        if (SEN1 == 1 && SEN2 == 1 && zone_count == 0) {
+                            zone_count = 1;
+                            printf(">> 복귀: (1,1) 진입\n");
+                        }
+                        else if (SEN1 == 0 && SEN2 == 0 && zone_count == 1) {
+                            ST();
+                            system_state = 0;
+                            target_table = 0;
+                            zone_count = 0;
+                            printf("\n=== 홈 도착! ===\n");
+                        }
+                    }
+                    // 테이블2 복귀: (0,1) → (1,0) → (1,1) → (0,0)
+                    else if (target_table == 2) {
+                        if (SEN1 == 1 && SEN2 == 0 && zone_count == 0) {
+                            zone_count = 1;
+                            printf(">> 복귀: (1,0) 진입\n");
+                        }
+                        else if (SEN1 == 1 && SEN2 == 1 && zone_count == 1) {
+                            zone_count = 2;
+                            printf(">> 복귀: (1,1) 진입\n");
+                        }
+                        else if (SEN1 == 0 && SEN2 == 0 && zone_count == 2) {
+                            ST();
+                            system_state = 0;
+                            target_table = 0;
+                            zone_count = 0;
+                            printf("\n=== 홈 도착! ===\n");
+                        }
+                    }
+                    // 테이블3 복귀: (0,0) → (0,1) → (1,0) → (1,1) → (0,0)
+                    else if (target_table == 3) {
+                        if (SEN1 == 0 && SEN2 == 1 && zone_count == 0) {
+                            zone_count = 1;
+                            printf(">> 복귀: (0,1) 진입\n");
+                        }
+                        else if (SEN1 == 1 && SEN2 == 0 && zone_count == 1) {
+                            zone_count = 2;
+                            printf(">> 복귀: (1,0) 진입\n");
+                        }
+                        else if (SEN1 == 1 && SEN2 == 1 && zone_count == 2) {
+                            zone_count = 3;
+                            printf(">> 복귀: (1,1) 진입\n");
+                        }
+                        else if (SEN1 == 0 && SEN2 == 0 && zone_count == 3) {
+                            ST();
+                            system_state = 0;
+                            target_table = 0;
+                            zone_count = 0;
+                            printf("\n=== 홈 도착! ===\n");
+                        }
+                    }
+                    // 강제 복귀 (target_table이 0이거나 알 수 없는 위치)
+                    else {
+                        // (0,0)이면서 이전에 (1,1)을 지나온 경우 = 홈
+                        if (SEN1 == 1 && SEN2 == 1) {
+                            zone_count = 99;  // (1,1) 통과 표시
+                            printf(">> 복귀: (1,1) 통과\n");
+                        }
+                        else if (SEN1 == 0 && SEN2 == 0 && zone_count == 99) {
+                            ST();
+                            system_state = 0;
+                            target_table = 0;
+                            zone_count = 0;
+                            printf("\n=== 홈 도착! ===\n");
+                        }
+                    }
+                }
+                break;
+
+            // -----------------------------------------
+            // 상태 4: 수동 모드
+            // -----------------------------------------
+            case 4:
+                // 모터 상태 유지
+                break;
+        }
+
+        // ============================================
+        // === 디버그 출력 ===
+        // ============================================
+        const char* state_str[] = {"HOME", "FORWARD", "ARRIVED", "RETURN", "MANUAL"};
+        const char* item_str = (item_sensor == 1) ? "LOAD" : "UNLOAD";
+
+        printf("ST=%d, TBL=%d, ZONE=%d, SEN=(%d,%d), %s\n",
+               system_state, target_table, zone_count, SEN1, SEN2, item_str);
+
+        HAL_Delay(50);
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+    }
   /* USER CODE END 3 */
 }
 
@@ -735,8 +800,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : LT1_Pin LT2_Pin */
-  GPIO_InitStruct.Pin = LT1_Pin|LT2_Pin;
+  /*Configure GPIO pins : LT1_Pin ITEM_Pin LT2_Pin */
+  GPIO_InitStruct.Pin = LT1_Pin|ITEM_Pin|LT2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
